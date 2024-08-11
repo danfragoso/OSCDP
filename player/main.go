@@ -1,76 +1,66 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
 )
 
-func getTrackOffsets() ([]int, error) {
-	cmd := exec.Command("cdparanoia", "-Q")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("error executing cdparanoia: %v", err)
-	}
-
-	var trackOffsets []int
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
-	trackPattern := regexp.MustCompile(`^\s*\d+\.\s+\d+\s+\[\d+:\d+.\d+\]\s+(\d+)`)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		match := trackPattern.FindStringSubmatch(line)
-		if match != nil {
-			offset, err := strconv.Atoi(match[1])
-			if err != nil {
-				return nil, fmt.Errorf("error parsing track offset: %v", err)
-			}
-			trackOffsets = append(trackOffsets, offset)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading cdparanoia output: %v", err)
-	}
-
-	return trackOffsets, nil
-}
-
-func calculateChecksum(trackOffsets []int) int {
-	checksum := 0
-	for _, offset := range trackOffsets {
-		for offset > 0 {
-			checksum += offset % 10
-			offset /= 10
-		}
-	}
-	return checksum
-}
-
-func calculateDiscId(trackOffsets []int) string {
-	numTracks := len(trackOffsets)
-	checksum := calculateChecksum(trackOffsets)
-	leadOut := trackOffsets[len(trackOffsets)-1] + 1 // Simplified assumption, adjust as needed
-
-	discId := fmt.Sprintf("%02x-%06x %06x", numTracks, checksum, leadOut)
-	return strings.ToUpper(discId)
-}
-
 func main() {
-	trackOffsets, err := getTrackOffsets()
+	fmt.Println("OSCDP (Open Source CD Player)")
+	fmt.Println("2024 - Danilo Fragoso")
+	fmt.Println("--------------")
+
+	controller, err := InitController()
 	if err != nil {
-		fmt.Println("Error:", err)
+		fmt.Printf("Failed to initialize controller: %v\n", err)
+		fmt.Println("Continuing without controller support")
+	}
+
+	mpv, err := InitMPV()
+	if err != nil {
+		fmt.Printf("Failed to initialize MPV: %v\n", err)
 		return
 	}
 
-	if len(trackOffsets) == 0 {
-		fmt.Println("Error: No tracks found.")
-		return
+	player := InitPlayer(mpv)
+
+	discSize := make(chan int64)
+	go monitorDiscSize(discSize)
+
+	controllerKeyPresses := make(chan string)
+	if controller != nil {
+		fmt.Println("Controller initialized")
+		go controller.ListenKeys(controllerKeyPresses)
 	}
 
-	discId := calculateDiscId(trackOffsets)
-	fmt.Println("DiscID:", discId)
+	for {
+		select {
+		case size := <-discSize:
+			if player.Disc == nil || player.Disc.Size != size {
+				var err error
+				fmt.Println("Detecting new disc")
+				player.Disc, err = createAndIdentifyDisk(size)
+				if err != nil {
+					player.EjectDisc()
+					continue
+				}
+
+				fmt.Println("New disc detected")
+				fmt.Println("Artist:", player.Disc.Artist)
+				fmt.Println("Title:", player.Disc.Title)
+
+				if err := player.StartDisc(); err != nil {
+					player.EjectDisc()
+				}
+			}
+		case key := <-controllerKeyPresses:
+			player.HandleKey(key)
+		}
+
+		player.UpdatePosition()
+		player.UpdateStatus()
+
+		if controller != nil {
+			player.UpdateController(controller)
+		}
+	}
 }

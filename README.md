@@ -1,22 +1,18 @@
 # OSCDP
 Open Source CD Player/Transport running Linux
 
-## Hardware and Software Requirements
-- Anything that can run Linux 
-    - cdparanoia
-    - mpv
-    - alsa[pulseaudio might work too]
+![OSCDP Player and Controller](image.jpg)
+
+## Player requirements
+- Linux 
+    - mpv + alsa[pulseaudio might work too]
     - go
-- CD-ROM drive
+- CD/DVD drive; USB, SATA, or IDE
+  - Only need to adjust the CDDEVICE variable on discid.go
 - Network connection (Optional)
     - To retrieve information about the CD from MusicBrainz
     - To control the player remotely
-- Audio output (USB DAC or onboard sound)
 
-## Player
-- [] Detect when a CD is inserted and start playing it
-- [] Detect when a CD is removed and stop playing it
-- [] Calculate DiscID from CD
-- [] Retrieve information about the CD from MusicBrainz
-
-## Controller 
+## Controller requirements
+- Raspberry Pi Pico
+- [WaveShare 1.3inch HAT](https://www.waveshare.com/pico-lcd-1.3.htm)
